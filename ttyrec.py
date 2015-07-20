@@ -7,7 +7,6 @@ from math import ceil
 from os.path import basename, dirname, exists, join
 from struct import unpack
 from subprocess import Popen
-from sys import stderr
 from tempfile import NamedTemporaryFile
 
 from jinja2 import FileSystemLoader, Template
@@ -69,30 +68,24 @@ def parseTtyrec(scriptf):
     with closing(scriptf):
         data = scriptf.read()
         while pos < len(data):
-            secs,usecs,amount = unpack('iii', data[pos:pos+12])
+            secs, usecs, amount = unpack('iii', data[pos:pos+12])
             pos += 12
             timing = int(ceil(secs * 1000 + float(usecs) / 1000))
-            if oldtime: offset += timing - oldtime
+            if oldtime:
+                offset += timing - oldtime
             oldtime = timing
             ret.append((escapeString(data[pos:pos+amount].decode(
                         encoding='utf-8', errors='replace')), offset))
             pos += amount
     return dumps(ret)
 
-def renderTemplate(json, dimensions, templatename, outfname=None):
+def renderTemplate(json, dimensions, templatename):
     fsl = FileSystemLoader(dirname(templatename), 'utf-8')
     e = Environment()
     e.loader = fsl
 
     templatename = basename(templatename)
-    rendered = e.get_template(templatename).render(json=json,
-                                                   dimensions=dimensions)
-
-    if not outfname:
-        return rendered
-
-    with closing(outfname):
-        outfname.write(rendered)
+    return e.get_template(templatename).render(json=json, dimensions=dimensions)
 
 
 if __name__ == '__main__':
@@ -104,39 +97,17 @@ if __name__ == '__main__':
     argparser.add_argument('-d', '--dimensions', type=int,
                            metavar=('h','w'), nargs=2,
                            help='dimensions of terminal', required=False)
-    argparser.add_argument('--json',
-                           help='output only JSON', action='store_true',
-                           required=False)
-    argparser.add_argument('--js',
-                           help='output only JavaScript', action='store_true',
-                           required=False)
-    argparser.add_argument('-m', '--template-file', type=str,
-                           default=DEFAULT_TEMPLATE,
-                           help='file to use as HTML template', required=False)
     argparser.add_argument('-o', '--output-file', type=FileType('w'),
                            help='file to output HTML to', required=False)
     argparser.add_argument('-s', '--script-file', type=str,
                            help='script file to parse', required=False)
-    argparser.add_argument('-t', '--timing-file', type=FileType('r'),
-                           help='timing file to parse', required=False)
 
     ns = argparser.parse_args()
 
     command     =   ns.command
     dimensions  =   ns.dimensions
-    tmpname     =   ns.template_file
     scriptf     =   ns.script_file
     outf        =   ns.output_file
-    timef       =   ns.timing_file 
-    json_only   =   ns.json
-    js_only     =   ns.js
-
-
-    if not json_only and not js_only and tmpname and not exists(tmpname):
-        stderr.write('Error: Template ("%s") does not exist.\n' % (tmpname))
-        stderr.write('If you only wanted JSON output, use "--json"\n')
-        stderr.write('If you only wanted JavaScript output, use "--js"\n')
-        exit(1)
 
     if not dimensions:
         dimensions = probeDimensions() if not scriptf else (24,80)
@@ -148,11 +119,12 @@ if __name__ == '__main__':
 
     json = parseTtyrec(scriptf)
 
-    if json_only:
-        print(json)
-    elif js_only:
-        print('JS ONLY PLEASE IMPLEMENT ME.')
-    elif tmpname and outf:
-        renderTemplate(json, dimensions, tmpname, outf)
-    elif tmpname:
-        print(renderTemplate(json, dimensions, tmpname))
+    tmpname = DEFAULT_TEMPLATE
+
+    rendered = renderTemplate(json, dimensions, tmpname)
+
+    if outf:
+        with closing(outf):
+            outf.write(rendered)
+    else:
+        print rendered
